@@ -15,15 +15,30 @@ function VoiceAssistant() {
   const mediaSourceRef = useRef(null);
   const sourceBufferRef = useRef(null);
   const audioElementRef = useRef(null);
+  const backgroundAudioRef = useRef(null);
   const audioDataRef = useRef([]);
   const messagesEndRef = useRef(null);
+
+  // Initialize background audio
+  useLayoutEffect(() => {
+    backgroundAudioRef.current = new Audio('/background-audio3.mp3');
+    backgroundAudioRef.current.loop = true;
+    backgroundAudioRef.current.volume = 0.4;
+
+    return () => {
+      if (backgroundAudioRef.current) {
+        backgroundAudioRef.current.pause();
+        backgroundAudioRef.current = null;
+      }
+    };
+  }, []);
 
   useLayoutEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [conversation]);
 
   function openWebSocketConnection() {
-    const ws_url = process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'ws://localhost:8000/listen';
+    const ws_url = process.env.NEXT_PUBLIC_WEBSOCKET_URL || 'wss://ai-backend-1-admin1339.replit.app/media-stream';
     wsRef.current = new WebSocket(ws_url);
     wsRef.current.binaryType = 'arraybuffer';
 
@@ -41,6 +56,12 @@ function VoiceAssistant() {
       } else {
         if (message.type === 'transcript_final' && isAudioPlaying()) {
           skipCurrentAudio();
+        }
+        if (message.type === 'audio_end') {
+          // Restore background music volume when TTS ends
+          if (backgroundAudioRef.current) {
+            backgroundAudioRef.current.volume = 0.4;
+          }
         }
         dispatch(message);
       }
@@ -84,6 +105,13 @@ function VoiceAssistant() {
   }
 
   function startAudioPlayer() {
+    // Start background music
+    if (backgroundAudioRef.current) {
+      backgroundAudioRef.current.play().catch(err => {
+        console.log('Error playing background audio:', err);
+      });
+    }
+
     mediaSourceRef.current = new MediaSource();
     mediaSourceRef.current.addEventListener('sourceopen', () => {
       if (!MediaSource.isTypeSupported('audio/mpeg')) return;
@@ -98,7 +126,12 @@ function VoiceAssistant() {
 
     const audioUrl = URL.createObjectURL(mediaSourceRef.current);
     audioElementRef.current = new Audio(audioUrl);
-    audioElementRef.current.play();
+    audioElementRef.current.play().then(() => {
+      // Lower background music volume while TTS plays
+      if (backgroundAudioRef.current) {
+        backgroundAudioRef.current.volume = 0.35;
+      }
+    });
   }
 
   function isAudioPlaying() {
@@ -117,6 +150,12 @@ function VoiceAssistant() {
   }
 
   function stopAudioPlayer() {
+    // Stop background music
+    if (backgroundAudioRef.current) {
+      backgroundAudioRef.current.pause();
+      backgroundAudioRef.current.currentTime = 0;
+    }
+
     if (audioElementRef.current) {
       audioElementRef.current.pause();
       URL.revokeObjectURL(audioElementRef.current.src);
